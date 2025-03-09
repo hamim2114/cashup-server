@@ -44,6 +44,7 @@ SIMPLE_JWT = {
 # Application definition
 
 INSTALLED_APPS = [
+    'myproject',
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',

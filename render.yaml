@@ -11,3 +11,6 @@ services:
         value: "False"
       - key: DATABASE_URL
         value: your_database_url
+        envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
