@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from myapi.views import ProductView, ItemView, ProfileView,PlaceOrderView,WithdrawalRequestAPIView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
+from myapi.views import ProductView, ItemView,ResetPasswordView, ProfileView,ForgotPasswordView,PlaceOrderView,CashupOwingProfitHistoryListView,WithdrawalRequestAPIView,CashupProfitHistoryListView,SliderCreateView,TransferToCashupOwingDPSView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView 
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -53,10 +53,15 @@ urlpatterns = [
     path('withdrawal-from-cashup-deposit/', WithdrawalRequestAPIView.as_view(), name='withdrawal-request'),
     path('withdrawal-from-main-balance/', WithdrawalRequestFromMianBalanceAPIView.as_view(), name='withdrawal-from-main-balance'),
     path('withdrawal-from-compounding-profit/', WithdrawalRequestFromCompoundingProfitAPIView.as_view(), name='withdrawal-from-compounding-profit'),
+    path('api/transfer-to-cashup-owing-dps/', TransferToCashupOwingDPSView.as_view(), name='transfer-to-cashup-owing-dps'),
+    path('create-slider/', SliderCreateView.as_view(), name='create-slider'),
+    path('cashup-profit-history/', CashupProfitHistoryListView.as_view(), name='cashup-profit-history'),
+    path('cashup-owing-profit-history/', CashupOwingProfitHistoryListView.as_view(), name='cashup-owing-profit-history'),
+    path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
 
 
-     
     
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
      
 

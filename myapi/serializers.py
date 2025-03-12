@@ -18,9 +18,11 @@ class ValidationError(Exception):
 
 # Item Serializer
 class ItemSerializer(serializers.ModelSerializer):
+    category = serializers.StringRelatedField()
+
     class Meta:
         model = Item
-        fields = ['id', 'name', 'description', 'is_available', 'price','members_price','item_image','discount_rate',]
+        fields = ['id', 'name', 'description', 'is_available', 'price','category','members_price','item_image','discount_price']
 
 # Buyer Serializer
 class BuyerSerializer(serializers.ModelSerializer):
@@ -40,7 +42,41 @@ class PurchaseSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Purchase
-        fields = ['id', 'item', 'quantity', 'total_price', 'discount_total_price', 'confirmed', 'paid']
+        fields = ['id', 'item', 'quantity', 'total_price', 'discount_total_price', 'total_membership_price','confirmed', 'paid']
+
+from rest_framework import serializers
+from .models import TransferHistory , TransferHistoryofCashup 
+
+class TransferHistorySerializer(serializers.ModelSerializer):
+    date=serializers.DateTimeField(format="%Y-%m-%d %H:%M")
+
+
+    
+    class Meta:
+        model = TransferHistory
+        fields = ['buyer', 'amount', 'date','verified']  # Fields you want to expose
+
+
+class TransferHistoryofCashupSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        # Get the original representation from the model serializer
+            representation = super().to_representation(instance)
+        
+        # Format the date manually in the desired format
+            if 'date' in representation:
+                representation['date'] = instance.date.strftime("%Y-%m-%d %H:%M")
+
+            return representation
+    
+    class Meta:
+        model = TransferHistoryofCashup
+        fields = ['buyer', 'amount', 'date']  # Fields you want to expose
+
+        
+
+    
+
+
 
 
 # CashupOwingDeposit Serializer
@@ -100,7 +136,8 @@ class CashupOwingDepositSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'requested_cashup_owing_main_balance',
-            'cashup_owing_main_balance',  # Updated field name (from cashup_owing_main_balance)
+            'cashup_owing_main_balance',
+            'cashup_owing_dps',  # Updated field name (from cashup_owing_main_balance)
             'buyer',
             'created_at',
             'daily_profit',
@@ -153,9 +190,10 @@ from .models import BuyerTransaction
 from decimal import Decimal
 
 class BuyerTransactionSerializer(serializers.ModelSerializer):
+    date=serializers.DateTimeField(format="%Y-%m-%d %H:%M",read_only=True)
     class Meta:
         model = BuyerTransaction
-        fields = ['transaction_id', 'phone_number', 'amount', 'method', 'verified']
+        fields = ['transaction_id', 'phone_number', 'amount', 'method', 'verified','date']
     
     # Validate the amount field to ensure it's a positive decimal value
     def validate_amount(self, value):
@@ -299,13 +337,18 @@ class DepositSerializer(serializers.Serializer):
         return value
 
 # Transfer Serializer
+from rest_framework import serializers
+
 class TransferSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
+    verified = serializers.BooleanField(required=False) # Assuming 'verified' is a boolean field
 
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("Amount must be greater than zero.")
         return value
+
+    
 
 from rest_framework import serializers
 from .models import WithdrawalFromCashupBalance
@@ -315,6 +358,12 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
         model = WithdrawalFromCashupBalance
         fields = '__all__'
         read_only_fields = ('buyer',)  # Make the buyer field read-only
+
+    def to_representation(self, instance):
+        """Override to exclude 'buyer' from API response."""
+        representation = super().to_representation(instance)
+        representation.pop('buyer', None)  # Remove the 'buyer' field from the response
+        return representation
 
     def create(self, validated_data):
         # Set the buyer to the currently logged-in user
@@ -329,10 +378,54 @@ class WithdrawalFromMainBalanceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('buyer',)  # Make the buyer field read-only
 
+    
+    def to_representation(self, instance):
+        """Override to exclude 'buyer' from API response."""
+        representation = super().to_representation(instance)
+        representation.pop('buyer', None)  # Remove the 'buyer' field from the response
+        return representation
+
     def create(self, validated_data):
         # Set the buyer to the currently logged-in user
         validated_data['buyer'] = self.context['request'].user
         return super().create(validated_data)
+
+
+from .models import Slider , CashupProfitHistory ,CashupOwingProfitHistory
+
+class CashupProfitHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashupProfitHistory
+        fields = ['field_name','previous_value', 'new_value','change_timestamp']
+
+    # Optionally format the timestamp to display only date and time up to minute
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Format change_timestamp to display only date and time up to minute (no seconds or microseconds)
+        representation['change_timestamp'] = instance.change_timestamp.strftime('%Y-%m-%d %H:%M')
+        return representation
+    
+
+class CashupOwingProfitHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashupOwingProfitHistory
+        fields = ['field_name','previous_value', 'new_value', 'change_timestamp']
+
+    # Optionally format the timestamp to display only date and time up to minute
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Format change_timestamp to display only date and time up to minute (no seconds or microseconds)
+        representation['change_timestamp'] = instance.change_timestamp.strftime('%Y-%m-%d %H:%M')
+        return representation
+
+
+class SliderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=Slider
+        fields='__all__'
+
     
 
 from .models import WithdrawalFromCompoundingProfit
@@ -342,8 +435,61 @@ class WithdrawalFromCompoundingProfitSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('buyer',)  # Make the buyer field read-only
 
+    def to_representation(self, instance):
+        """Override to exclude 'buyer' from API response."""
+        representation = super().to_representation(instance)
+        representation.pop('buyer', None)  # Remove the 'buyer' field from the response
+        return representation
+
     def create(self, validated_data):
         # Set the buyer to the currently logged-in user
         validated_data['buyer'] = self.context['request'].user
         return super().create(validated_data)
+
+
+from django.core.exceptions import ValidationError
+from .models import BuyerOTP
+
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=15)
+
+    def validate_phone_number(self, value):
+        # Here, you can add additional validation to check if the phone number is valid.
+        # For example, you can check if it contains only digits or follows a specific pattern.
+        if not value.isdigit():
+            raise serializers.ValidationError("Phone number must contain only digits.")
+        return value
+
+  
+from django.utils import timezone
+from datetime import timedelta
+
+class ResetPasswordSerializer(serializers.Serializer):
+    otp = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(min_length=5)
+
+    def validate_otp(self, value):
+        """
+        Validate OTP and check if it's valid and not expired.
+        """
+        try:
+            otp_entry = BuyerOTP.objects.get(otp=value, is_verified=False)
+        except BuyerOTP.DoesNotExist:
+            raise serializers.ValidationError("Invalid or expired OTP.")
+
+        # Check if the OTP has expired (for example, after 5 minutes)
+        if otp_entry.created_at + timedelta(minutes=5) < timezone.now():
+            raise serializers.ValidationError("OTP has expired. Please request a new one.")
+
+        return value
+
+    def validate_new_password(self, value):
+        """
+        Validate the new password (you can add more validation rules here).
+        """
+        if len(value) < 5:
+            raise serializers.ValidationError("Password must be at least 8 characters long.")
+        return value
 

@@ -39,12 +39,12 @@ SIMPLE_JWT = {
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
 }
+DATE_FORMAT = 'Y-m-d H:i'
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'myproject',
     'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -108,14 +108,13 @@ DATABASES = {
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://cashup-beta.vercel.app"  # Allow frontend access
+      # Allow frontend access
 ]
 
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies, tokens, etc.
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "https://cashup-beta.vercel.app"  # Allow CSRF protection for frontend
+    "http://localhost:3000",  # Allow CSRF protection for frontend
 ]
 
 
@@ -153,7 +152,7 @@ REST_FRAMEWORK = {
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Dhaka'
 
 USE_I18N = True
 

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Purchase, Buyer ,WithdrawalFromCashupBalance, WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
+from .models import Purchase, Buyer,BuyerOTP,Slider,WithdrawalFromCashupBalance,CashupOwingProfitHistory,CashupProfitHistory,TransferHistory,WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
 from .models import User
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _  # Import for translation support
@@ -14,16 +14,41 @@ class PurchaseAdmin(admin.ModelAdmin):
     readonly_fields = ['total_price']
     
 class CashupAdmin(admin.ModelAdmin):
+    list_display = ('buyer', 'cashup_main_balance', 'created_at', 'daily_profit', 'compounding_profit', 
+                    'monthly_profit', 'withdraw', 'product_profit')
     search_fields=['phone_number']
 class CategoryAdmin(admin.ModelAdmin):
     search_fields=['name']
 class BuyerTransactionAdmin(admin.ModelAdmin):
+    list_display= ('buyer', 'transaction_id', 'phone_number', 'amount', 'method', 'verified', 'date')
     search_fields=['phone_number']
 class CheckoutDetailsAdmin(admin.ModelAdmin):
     search_fields=['phone_number']
+
+class CashupProfitHistoryAdmin(admin.ModelAdmin):
+    list_display = ('cashup_deposit', 'field_name', 'previous_value', 'new_value', 'change_timestamp')  # Columns to show in the list view
+    search_fields = ('cashup_deposit__id', 'field_name')  # Fields to search in the admin interface
+    list_filter = ('change_timestamp', 'updated_by')  # Filters for the list view
+class CashupOwingProfitHistoryAdmin(admin.ModelAdmin):
+    list_display = ('cashup_owing_deposit', 'field_name', 'previous_value', 'new_value', 'change_timestamp')  # Columns to show in the list view
+    search_fields = ('cashup_owing_deposit__id', 'field_name')  # Fields to search in the admin interface
+    list_filter = ('change_timestamp', 'updated_by')  # Filters for the list view
+
+
+
 class CashupOwingDepositAdmin(admin.ModelAdmin):
     search_fields = ['buyer__phone_number']  # Ensure you search using the buyer's phone number
     list_display = ['buyer', 'cashup_owing_main_balance', 'requested_cashup_owing_main_balance', 'verified', 'created_at']
+    actions = ['update_verified_in_transfer_history']
+
+    def update_verified_in_transfer_history(self, request, queryset):
+        # Update all TransferHistory linked to the selected CashupOwingDeposit objects
+        for deposit in queryset:
+            if deposit.requested_cashup_owing_main_balance == 0:
+                TransferHistory.objects.filter(cashup_owing_deposit=deposit).update(verified=True)
+        self.message_user(request, "Verified status updated for related TransferHistory.")
+    
+    update_verified_in_transfer_history.short_description = "Update Verified status in related TransferHistory"
 
     def save_model(self, request, obj, form, change):
         # Check if the `verified` field is being set to True and `requested_cashup_owing_main_balance` is greater than 0
@@ -186,6 +211,7 @@ class WithdrawalFromCmpoundingProfitAdmin(admin.ModelAdmin):
 
 
 
+    
 # Register the custom admin class
 admin.site.register(CashupOwingDeposit, CashupOwingDepositAdmin)
 admin.site.register(Purchase,PurchaseAdmin)
@@ -197,7 +223,15 @@ admin.site.register(BuyerTransaction,BuyerTransactionAdmin)
 admin.site.register(CheckoutDetail,CheckoutDetailsAdmin)
 admin.site.register(WithdrawalFromMainBalance,WithdrawalFromMainBalanceAdmin)
 admin.site.register(WithdrawalFromCashupBalance, WithdrawalRequestAdmin)
-admin.site.register(WithdrawalFromCompoundingProfit,WithdrawalFromCmpoundingProfitAdmin)
+admin.site.register(TransferHistory)
+admin.site.register(CashupProfitHistory,CashupProfitHistoryAdmin)
+admin.site.register(CashupOwingProfitHistory,CashupOwingProfitHistoryAdmin)
+admin.site.register(BuyerOTP)
+admin.site.register(Slider)
+
+
+
+
 
 
 

@@ -2,10 +2,6 @@ from rest_framework import viewsets , generics , mixins
 from .models import Purchase, Buyer ,Item , CashupOwingDeposit ,CashupDeposit
 from .serializers import PurchaseSerializer,ItemSerializer,RegisterSerializer, LoginSerializer,BuyerTransactionSerializer,TransferSerializer,CashupDepositSerializer,DepositSerializer ,BuyerSerializer , CashupOwingDepositSerializer ,DepositSerializer
 from django.db.models import Prefetch
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.db.models import Prefetch
-from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +9,10 @@ from .serializers import UpdateBuyerProfileSerializer
 from django.shortcuts import get_object_or_404
 from django.db import transaction 
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.views import APIView
+
+
+
 
 
 
@@ -113,6 +113,28 @@ class BuyerDetail(generics.RetrieveUpdateDestroyAPIView,mixins.RetrieveModelMixi
         
         return buyer
     
+
+from rest_framework import generics
+from .models import CashupProfitHistory ,CashupOwingProfitHistory
+from .serializers import CashupProfitHistorySerializer , CashupOwingProfitHistorySerializer
+
+class CashupProfitHistoryListView(generics.ListAPIView):
+    permission_classes=[IsAuthenticated]
+    serializer_class = CashupProfitHistorySerializer
+
+    def get_queryset(self):
+        # Filter only by the logged-in user (updated_by = request.user)
+        return CashupProfitHistory.objects.filter(updated_by=self.request.user)
+    
+
+class CashupOwingProfitHistoryListView(generics.ListAPIView):
+    permission_classes=[IsAuthenticated]
+    serializer_class = CashupOwingProfitHistorySerializer
+
+    def get_queryset(self):
+        # Filter only by the logged-in user (updated_by = request.user)
+        return CashupOwingProfitHistory.objects.filter(updated_by=self.request.user)
+
 
 class ConfirmedBuyerView(generics.ListAPIView):
     permission_classes=[IsAuthenticated]
@@ -260,6 +282,23 @@ class BuyerTransactionCreateView(APIView):
         
         # If serializer is not valid, return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def get(self, request, *args, **kwargs):
+        user = request.user  # The logged-in user
+        
+        # Fetch the corresponding Buyer instance for the logged-in user
+        try:
+            buyer = Buyer.objects.get(username=user.username)
+        except Buyer.DoesNotExist:
+            return Response({"detail": "Buyer instance not found for this user."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch all transactions for this buyer
+        transactions = BuyerTransaction.objects.filter(buyer=buyer).order_by('-date')  # Adjust field name if needed
+        
+        # Serialize the data
+        serializer = BuyerTransactionSerializer(transactions, many=True)
+        
+        # Return the list of transactions
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 
@@ -289,6 +328,11 @@ class CashupDepositByBuyerAPIView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]  # Ensure only authenticated users can access this view
     serializer_class = CashupDepositSerializer
 
+
+    def perform_update(self, serializer):
+        # Automatically set the updated_by field to the current logged-in user before saving
+        serializer.save(updated_by=self.request.user)
+
     def get_queryset(self):
         # Get the authenticated user from the JWT token
         buyer = self.request.user
@@ -310,7 +354,15 @@ class RegisterView(APIView):
             # Create a new Buyer instance and return it
             user = serializer.save()
             # Respond with the created user's data (excluding the password)
+
+            CashupOwingDeposit.objects.create(
+                    buyer=user,  # The user is the buyer
+                    cashup_owing_main_balance=Decimal('0.00'),
+                    requested_cashup_owing_main_balance=Decimal('0.00'),
+                    verified=False
+                )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+
         
         # If the data is not valid, return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -413,10 +465,135 @@ from django.db.models import Sum
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
 from rest_framework import status
-from .models import Buyer
-from .serializers import DepositSerializer
-from decimal import Decimal
+from .models import Buyer, BuyerOTP
+from .serializers import ForgotPasswordSerializer
+from django.utils import timezone
+import random
+import string
+
+# Function to generate OTP
+def generate_otp():
+    return ''.join(random.choices(string.digits, k=6))
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    """
+    API view to handle forgot password request for a buyer.
+    This view will:
+    - Validate the phone number.
+    - Generate and save an OTP.
+    - Send the OTP to the user's phone (not implemented here).
+    """
+
+    def post(self, request, *args, **kwargs):
+        # Validate the phone number via the serializer
+        serializer = ForgotPasswordSerializer(data=request.data)
+
+        if serializer.is_valid():
+            phone_number = serializer.validated_data['phone_number']
+
+            # Check if the buyer exists with the provided phone number
+            try:
+                buyer = Buyer.objects.get(phone_number=phone_number)
+            except Buyer.DoesNotExist:
+                return Response({"detail": "Buyer with this phone number does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Generate OTP
+            otp = generate_otp()
+
+            # Create a new OTP entry for the buyer
+            otp_entry = BuyerOTP.objects.create(
+                buyer=buyer,
+                otp=otp,
+                is_verified=False,
+                created_at=timezone.now()
+            )
+
+            # Here, you would typically send the OTP to the user's phone number via SMS.
+            # For now, we are just returning a response.
+            # (Don't return the OTP in production, it's for testing only)
+            return Response({
+                "detail": "OTP has been sent to your phone.",
+                # Remove the OTP in production!
+                "otp": otp  # Only for testing
+            }, status=status.HTTP_200_OK)
+
+        # If the serializer is not valid, return the errors
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+from django.contrib.auth.hashers import make_password
+from .models import Buyer, BuyerOTP
+from django.utils import timezone
+from datetime import timedelta
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+from rest_framework import status
+from django.contrib.auth.hashers import make_password
+from .models import BuyerOTP
+from .serializers import ResetPasswordSerializer
+from django.utils import timezone
+from datetime import timedelta
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]  # You may want to restrict this based on your auth setup.
+
+    """
+    API view to verify OTP and reset password for the buyer.
+    This view will:
+    - Validate the OTP.
+    - If valid and not expired, allow password reset and delete the old one.
+    """
+    def post(self, request, *args, **kwargs):
+        # Use the serializer to validate the data
+        serializer = ResetPasswordSerializer(data=request.data)
+
+        # Validate the serializer fields
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get OTP and new password from validated data
+        otp = serializer.validated_data['otp']
+        new_password = serializer.validated_data['new_password']
+
+        # Verify the OTP
+        try:
+            otp_entry = BuyerOTP.objects.get(otp=otp, is_verified=False)
+            buyer = otp_entry.buyer
+        except BuyerOTP.DoesNotExist:
+            return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if the OTP has expired (for example, after 5 minutes)
+        if otp_entry.created_at + timedelta(minutes=5) < timezone.now():
+            return Response({"detail": "OTP has expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mark the OTP as verified
+        otp_entry.is_verified = True
+        otp_entry.save()
+
+        # Hash and reset the password
+        buyer.password = make_password(new_password)
+        buyer.save()
+
+        # Optionally, delete the OTP after successful password reset
+        otp_entry.delete()
+
+        return Response({"detail": "Password has been successfully reset."}, status=status.HTTP_200_OK)
+
+
+
+
+
 
 class DepositToMainBalance(APIView):
     permission_classes = [IsAuthenticated]
@@ -461,7 +638,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
-from .models import CashupDeposit
+from .models import CashupDeposit , TransferHistoryofCashup ,TransferHistoryofCashupOwingDPS
 
 class TransferToCashupDeposit(APIView):
     permission_classes = [IsAuthenticated]
@@ -516,6 +693,13 @@ class TransferToCashupDeposit(APIView):
                         buyer=buyer,
                     )
 
+
+                TransferHistoryofCashup.objects.create(
+                    buyer=buyer,
+                    amount=amount,
+                      # Assuming the 'method' is included in the serializer
+                )
+
             # Return success response
             return Response(
                 {
@@ -527,6 +711,24 @@ class TransferToCashupDeposit(APIView):
 
         # If serializer is invalid, return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def get(self, request):
+                # Get transfer history for the authenticated buyer (all history)
+        buyer = request.user
+
+                # Fetch all transfer history for the buyer
+        transfers = TransferHistoryofCashup.objects.filter(buyer=buyer).order_by('-date')
+
+                # Serialize the data
+        transfer_data = [
+                    {
+                    "amount": str(transfer.amount),
+                    "date": transfer.date,
+                    
+                    }
+                for transfer in transfers
+            ]
+
+        return Response(transfer_data, status=status.HTTP_200_OK)
 
 
 from .models import CashupOwingDeposit
@@ -536,38 +738,168 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.utils.timezone import make_aware
+from .models import CashupDeposit, TransferHistory 
+from datetime import datetime
+from .serializers import TransferHistorySerializer
+class TransferToCashupOwingDeposit(APIView):
+    permission_classes = [IsAuthenticated]
+    from django.db import transaction
+from decimal import Decimal
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+from .models import Buyer, CashupOwingDeposit, TransferHistory
+from .serializers import TransferSerializer
 
 class TransferToCashupOwingDeposit(APIView):
     permission_classes = [IsAuthenticated]
+
     def post(self, request):
         buyer = get_object_or_404(Buyer, id=request.user.id)
         serializer = TransferSerializer(data=request.data)
 
         if serializer.is_valid():
             amount = serializer.validated_data['amount']
-            
+            verified = serializer.validated_data['verified']
+
             with transaction.atomic():
                 # Retrieve all CashupOwingDeposit instances for the buyer
                 cashup_owing_deposits = CashupOwingDeposit.objects.filter(buyer=buyer)
 
-                total_cashup_owing_main_balance = 0
+                total_cashup_owing_main_balance = Decimal(0)
+                cashup_owing_deposit = None  # Initialize to None
+
                 if cashup_owing_deposits.exists():
                     # Update the cashup_owing_main_balance for existing instances
                     for deposit in cashup_owing_deposits:
-                        deposit.requested_cashup_owing_main_balance = deposit.requested_cashup_owing_main_balance + amount
+                        deposit.requested_cashup_owing_main_balance += amount
                         deposit.save()
-                        total_cashup_owing_main_balance = deposit.requested_cashup_owing_main_balance
+                        total_cashup_owing_main_balance += deposit.requested_cashup_owing_main_balance
+
+                    # Choose the first deposit as the cashup_owing_deposit
+                    cashup_owing_deposit = cashup_owing_deposits.first()
+
                 else:
                     # Create a new CashupOwingDeposit instance if none exist
                     cashup_owing_deposit = CashupOwingDeposit.objects.create(
                         requested_cashup_owing_main_balance=amount,
                         buyer=buyer,
                     )
-                    total_cashup_owing_main_balance = cashup_owing_deposit.requested_ashup_owing_main_balance
+                    total_cashup_owing_main_balance = cashup_owing_deposit.requested_cashup_owing_main_balance
 
-            return Response({"message": f"Transferred {amount} to Requested Cashup Owing Deposit", "requested_cashup_owing_main_balance": total_cashup_owing_main_balance}, status=status.HTTP_200_OK)
-        
+                
+
+                # Create TransferHistory and associate with CashupOwingDeposit
+                TransferHistory.objects.create(
+                    buyer=buyer,
+                    amount=amount,
+                    verified=verified,  # Assuming this is set based on your logic
+                    cashup_owing_deposit=cashup_owing_deposit  # Link to the deposit
+                )
+
+            return Response({
+                "message": f"Transferred {amount} to Requested Cashup Owing Deposit",
+                "requested_cashup_owing_main_balance": total_cashup_owing_main_balance
+            }, status=status.HTTP_200_OK)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    
+    def get(self, request):
+                # Get transfer history for the authenticated buyer (all history)
+        buyer = request.user
+
+                # Fetch all transfer history for the buyer
+        transfers = TransferHistory.objects.filter(buyer=buyer).order_by('-date')
+
+                # Serialize the data
+        transfer_data = [
+                    {
+                    "amount": str(transfer.amount),
+                    "date": transfer.date,
+                    "verified":transfer.verified,
+                    
+                    
+                    
+                    }
+                for transfer in transfers
+            ]
+
+        return Response(transfer_data, status=status.HTTP_200_OK)
+from decimal import Decimal
+
+
+
+class TransferToCashupOwingDPSView(APIView):
+    permission_classes = [IsAuthenticated]
+      # Ensure the user is authenticated
+
+    def post(self, request):
+        buyer = request.user
+        # Get the logged-in user
+      
+
+        # Get the CashupOwingDeposit object for the logged-in user
+        try:
+            cashup_owing_deposit = CashupOwingDeposit.objects.get(buyer=buyer)
+        except CashupOwingDeposit.DoesNotExist:
+            return Response({"error": "CashupOwingDeposit not found for the user."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Get the transfer amount from the request data
+        amount = request.data.get('amount', None)
+        if amount is None:
+            return Response({"error": "Amount is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate amount
+        try:
+            amount = Decimal(amount)
+        except ValueError:
+            return Response({"error": "Invalid amount."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if amount <= 0:
+            return Response({"error": "Amount must be positive."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Ensure the user cannot transfer more than the available balance
+        if amount > cashup_owing_deposit.cashup_owing_main_balance:
+            return Response({"error": "Amount exceeds available balance."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Perform the transfer
+        cashup_owing_deposit.cashup_owing_main_balance -= amount
+        cashup_owing_deposit.cashup_owing_dps += amount
+        cashup_owing_deposit.save()
+
+        TransferHistoryofCashupOwingDPS.objects.create(
+                    buyer=buyer,
+                    amount=amount,
+                      # Assuming the 'method' is included in the serializer
+                )
+        
+
+        # Serialize the updated data and return response
+        serializer = CashupOwingDepositSerializer(cashup_owing_deposit)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    def get(self, request):
+                # Get transfer history for the authenticated buyer (all history)
+        buyer = request.user
+
+                # Fetch all transfer history for the buyer
+        transfers = TransferHistoryofCashupOwingDPS.objects.filter(buyer=buyer).order_by('-date')
+
+                # Serialize the data
+        transfer_data = [
+                    {
+                    "amount": str(transfer.amount),
+                    "date": transfer.date,
+                    
+                    }
+                for transfer in transfers
+            ]
+
+        return Response(transfer_data, status=status.HTTP_200_OK)
+
 
 
 
@@ -596,8 +928,22 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Buyer, BuyerOTP
 from .serializers import BuyerOTPSerializer
+import random
+import os
+import requests
+from urllib.parse import urlencode
+from django.conf import settings
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Buyer, BuyerOTP
+from datetime import datetime, timedelta
+from urllib.parse import quote_plus
 
 class SendOTPToBuyer(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         phone_number = request.data.get('phone_number')
         if not phone_number:
@@ -609,21 +955,71 @@ class SendOTPToBuyer(APIView):
             return Response({'error': 'Buyer not found'}, status=status.HTTP_404_NOT_FOUND)
 
         otp = str(random.randint(100000, 999999))
-        # Save OTP to database
+        # Save OTP to database with expiration time (e.g., 5 minutes)
+        expires_at = datetime.now() + timedelta(minutes=5)
         otp_instance = BuyerOTP.objects.create(buyer=buyer, otp=otp)
 
         # Send OTP via BulkSMS BD
-        api_key = 'sZPisZCH9HlXyM4JpXeX'
-        sender_id = 'Cashup'
-        message = f'Your OTP is {otp}'
-        url = f'http://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={phone_number}&senderid={sender_id}&message={message}'
+        api_key = os.getenv('BULKSMS_API_KEY', 'SWquPhr2vD7nuBMYtbZU')  # Use environment variable for API key
+        sender_id = os.getenv('BULKSMS_SENDER_ID', '8809617624800')  # Use environment variable for sender ID
+        message = f'Your Cashup OTP is {otp}'
 
-        response = requests.get(url)
-        if response.status_code == 200:
-            return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
-        else:
-            return Response({'error': 'Failed to send OTP'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+        # URL encode the message to handle special characters
+        encoded_message = quote_plus(message)
+
+        # Build the URL with query parameters
+        params = {
+            'api_key': api_key,
+            'type': 'text',
+            'number': phone_number,
+            'senderid': sender_id,
+            'message': encoded_message
+        }
+        url = f'http://bulksmsbd.net/api/smsapi?{urlencode(params)}'
+
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                response_data = response.json()  # assuming the response is in JSON format
+                # Check for success code
+                if response_data.get('status_code') == 202:
+                    return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
+                else:
+                    # Handle specific API error codes
+                    error_code = response_data.get('status_code', 'Unknown')
+                    error_message = self.get_error_message(error_code)
+                    return Response({'error': error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                return Response({'error': 'Failed to send OTP, please try again later'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except requests.RequestException as e:
+            # Log the exception for better debugging
+            return Response({'error': 'An error occurred while sending OTP', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def get_error_message(self, error_code):
+        error_messages = {
+            202: 'SMS submitted successfully.',
+            1001: 'Invalid number.',
+            1002: 'Sender ID is incorrect or disabled.',
+            1003: 'Required fields are missing.',
+            1005: 'Internal error.',
+            1006: 'Balance validity not available.',
+            1007: 'Balance insufficient.',
+            1011: 'User ID not found.',
+            1012: 'Masking SMS must be in Bengali.',
+            1013: 'Sender ID not found in the gateway for the provided API key.',
+            1014: 'Sender type name not found.',
+            1015: 'Sender ID does not have a valid gateway.',
+            1016: 'Sender type name active price info not found.',
+            1017: 'Sender type name price info not found.',
+            1018: 'Account is disabled.',
+            1019: 'Sender type name price for this account is disabled.',
+            1020: 'Parent account not found.',
+            1021: 'Parent account sender type name not found.',
+            1031: 'Account not verified.',
+            1032: 'IP is not whitelisted.',
+        }
+        return error_messages.get(error_code, 'Unknown error occurred')
+
 
 class VerifyBuyerOTP(APIView):
     def post(self, request):
@@ -662,12 +1058,10 @@ from .serializers import BuyerSerializer, PurchaseSerializer
 from .serializers import CheckoutDetailsSerializer  # Assuming your serializer is imported
 
 
-from .models import Buyer, Purchase
-from .serializers import BuyerSerializer, PurchaseSerializer
- # Assuming the 'Purchase' model is imported
-from .serializers import CheckoutDetailsSerializer  # Assuming your serializer is imported
-
-
+from django.db import transaction
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework import status
 class CheckoutDetailsView(APIView):
     def post(self, request, *args, **kwargs):
         # Retrieve all the unconfirmed purchases for the logged-in user
@@ -676,45 +1070,81 @@ class CheckoutDetailsView(APIView):
         # Handle the case where no unconfirmed purchases are found
         if not user_purchases:
             return Response({"detail": "No active unconfirmed purchases found."},
-                            status=status.HTTP_400_BAD_REQUEST)
+                             status=status.HTTP_400_BAD_REQUEST)
 
         # Calculate the total price of all unconfirmed purchases
         total_price = sum([purchase.total_price for purchase in user_purchases])
 
-        # Ensure the buyer has enough balance to complete the purchase
-        if total_price > request.user.main_balance:
-            return Response({"detail": "Insufficient balance to complete the purchase."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        # Retrieve the user's cashup balance
+        cashup_balance = request.user.cashup_deposits.first().cashup_main_balance  # Fetching the user's main cashup balance
 
-        # Use a transaction to ensure atomicity (both operations should succeed or fail together)
-        with transaction.atomic():
-            # Deduct the total price of all unconfirmed purchases from the buyer's main_balance
+        # Retrieve the user's main balance
+        main_balance = request.user.main_balance
+
+        # Determine the price to charge the buyer
+        if cashup_balance > 0:
+            # If the total price is less than or equal to the cashup balance
+            if total_price <= cashup_balance:
+                # Apply the member price (total_price) to the purchase
+                total_member_price = sum([purchase.membership_price * purchase.quantity for purchase in user_purchases])
+
+                # Deduct the total member price from the main balance (buyer pays the member price)
+                if total_member_price > main_balance:
+                    return Response({"detail": "Insufficient balance to complete the purchase."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                # Deduct full member price from the main balance
+                request.user.main_balance -= total_member_price
+                request.user.save()
+
+            else:
+                # If the total price is greater than the cashup balance, use the full original price
+                if total_price > main_balance:
+                    return Response({"detail": "Insufficient balance to complete the purchase."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                # Deduct full original price (total price) from the main balance
+                request.user.main_balance -= total_price
+                request.user.save()
+
+        else:
+            # No cashup balance, deduct full price from the main balance
+            if total_price > main_balance:
+                return Response({"detail": "Insufficient balance to complete the purchase."},
+                                 status=status.HTTP_400_BAD_REQUEST)
+
+            # Deduct full price from main balance
             request.user.main_balance -= total_price
             request.user.save()
 
-            # Mark all the unconfirmed purchases as confirmed
-            user_purchases.update(confirmed=True)
+        # Mark all the unconfirmed purchases as confirmed
+        user_purchases.update(confirmed=True)
 
-            # Pass the purchase to the serializer context for any related logic within the serializer
-            serializer_data = []
-            for purchase in user_purchases:
-                serializer = CheckoutDetailsSerializer(data=request.data, context={'purchase': purchase})
-                
-                # Validate the serializer
-                if serializer.is_valid():
-                    # Save the CheckoutDetails
-                    serializer.save()
-                    serializer_data.append(serializer.data)
-                else:
-                    # If the serializer validation fails, rollback the transaction
-                    transaction.set_rollback(True)
-                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Return a success message
+        return Response({
+            "message": "All unconfirmed purchases successfully confirmed!",
+        }, status=status.HTTP_201_CREATED)
 
-            # Return a success message with the serializer data
-            return Response({
-                "message": "All unconfirmed purchases successfully confirmed!",
-                "purchase_details": serializer_data
-            }, status=status.HTTP_201_CREATED)
+
+
+
+
+from .models import Slider
+from .serializers import SliderSerializer
+
+class SliderCreateView(APIView):
+    def get(self, request, *args, **kwargs):
+        # Retrieve all slider data
+        sliders = Slider.objects.all()  # You can apply filters if needed
+        
+        # Serialize the data
+        serializer = SliderSerializer(sliders, many=True)
+        
+        # Return serialized data as response
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
 
 
 
