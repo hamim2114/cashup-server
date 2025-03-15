@@ -7,6 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.validators import RegexValidator
 
 
 # Buyer Model
@@ -18,7 +19,13 @@ class Buyer(AbstractUser):
         help_text="Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only."
     )
     name = models.CharField(max_length=255)
-    phone_number = models.CharField(max_length=20, unique=True)
+    phone_number = models.CharField(
+        max_length=15,
+        validators=[RegexValidator(
+            regex=r'^(?:\+8801[3-9]{1}[0-9]{8}|01[3-9]{1}[0-9]{8})$', 
+            message="Enter a valid Bangladeshi phone number (with or without country code)."
+        )]
+    )
     membership_status = models.BooleanField(default=False)
     main_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     date_of_birth = models.DateField(null=True, blank=True)
@@ -34,6 +41,7 @@ class Buyer(AbstractUser):
     
     groups = models.ManyToManyField("auth.Group", related_name='buyers', blank=True)
     user_permissions = models.ManyToManyField("auth.Permission", related_name='buyers_permissions', blank=True)
+    referral_code_used = models.ForeignKey('ReferralCode', on_delete=models.SET_NULL, null=True, blank=True)
 
     def save(self, *args, **kwargs):
 
@@ -58,6 +66,13 @@ class WithdrawalFromMainBalance(models.Model):
     buyer = models.ForeignKey('Buyer', on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=[("Pending", "Pending"), ("Approved", "Approved"), ("Rejected", "Rejected")], default="Pending")
+    METHOD_CHOICES = [
+        ('Bkash', 'BKash'),
+        ('Nagad', 'Nagad'),
+        ('Rocket','Rocket')
+    ]
+    method = models.CharField(max_length=10, choices=METHOD_CHOICES, default='Bkash')
+    withdraw_number=models.CharField(max_length=20)
     date=models.DateTimeField(default=timezone.now) 
     def __str__(self):
         return f"Withdrawal request by {self.buyer.name} for {self.amount} - {self.status}"
@@ -71,6 +86,26 @@ class WithdrawalFromCashupBalance(models.Model):
     
     def __str__(self):
         return f"Withdrawal request by {self.buyer.name} for {self.amount} - {self.status}"
+
+
+class WithdrawalFromDailyProfit(models.Model):
+    buyer = models.ForeignKey('Buyer', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=[("Pending", "Pending"), ("Approved", "Approved"), ("Rejected", "Rejected")], default="Pending")
+    date=models.DateTimeField(default=timezone.now)    
+    def __str__(self):
+        return f"Withdrawal request by {self.buyer.name} for {self.amount} - {self.status}"
+
+
+
+class WithdrawalFromAffiliateProfit(models.Model):
+    buyer = models.ForeignKey('Buyer', on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=[("Pending", "Pending"), ("Approved", "Approved"), ("Rejected", "Rejected")], default="Pending")
+    date=models.DateTimeField(default=timezone.now)    
+    def __str__(self):
+        return f"Withdrawal request by {self.buyer.name} for {self.amount} - {self.status}"
+
 
 
 # Category Model
@@ -126,6 +161,8 @@ class Purchase(models.Model):
     paid = models.BooleanField(default=False)
     membership_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0, null=True, blank=True)
     total_membership_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0, null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now,null=True) 
+
 
     def save(self, *args, **kwargs):
         if self.item:
@@ -190,11 +227,9 @@ class CashupOwingDeposit(models.Model):
 
     def __str__(self):
         return f"Owing Deposit: {self.cashup_owing_main_balance} by {self.buyer.name if self.buyer else 'Unknown Buyer'}"
-
-
-# Cashup Deposit Model
 class CashupDeposit(models.Model):
-    cashup_main_balance = models.DecimalField(max_digits=10, decimal_places=2)
+    cashup_main_balance = models.DecimalField(max_digits=10, decimal_places=2,default=0.00)
+    affiliate_profit = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     buyer = models.ForeignKey(Buyer, on_delete=models.SET_NULL, null=True, related_name='cashup_deposits')
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     daily_profit = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -211,11 +246,12 @@ class CashupDeposit(models.Model):
         return f"Deposit: {self.cashup_main_balance} by {self.buyer.name if self.buyer else 'Unknown Buyer'}"
 
     def save(self, *args, **kwargs):
-        
         if self.buyer and not self.updated_by:
-            self.updated_by = self.buyer  # S
+            self.updated_by = self.buyer  # Set updated_by to buyer if not provided
+
         # Check if cashup_main_balance > 0 and update the buyer's membership_status
-        if self.cashup_main_balance > 0:
+        if self.cashup_main_balance is not None and self.cashup_main_balance > 0:
+
             if self.buyer:
                 self.buyer.membership_status = True
                 self.buyer.save()  # Save the buyer's membership status change
@@ -223,7 +259,39 @@ class CashupDeposit(models.Model):
             if self.buyer:
                 self.buyer.membership_status = False
                 self.buyer.save()
+
+        # Add affiliate profit to the referrer for the deposit by Buyer A
+        if self.buyer:
+            # Check if the buyer has used a referral code and if the referral code is valid
+            if self.buyer.referral_code_used:
+                referral_code = self.buyer.referral_code_used  # The referral code used by Buyer A
+                # Check if the referral code is valid, hasn't been used, and hasn't had profit awarded
+                if referral_code.is_valid and referral_code.is_used and not referral_code.affiliate_profit_awarded:
+                    referrer = referral_code.creator  # Buyer B is the referrer
+                    if referrer:
+                        affiliate_profit = self.cashup_main_balance * Decimal(0.05)  # 5% of Buyer A's deposit
+                        existing_deposit = CashupDeposit.objects.filter(buyer=referrer).first()
+                        
+                        # Create a CashupDeposit for the referrer (Buyer B) with the affiliate profit
+                        if existing_deposit:
+                        # Add the affiliate profit to the existing deposit
+                            existing_deposit.affiliate_profit += affiliate_profit
+                            existing_deposit.save()  # Save the updated deposit
+                    else:
+                        # If no existing CashupDeposit, you can optionally create one (though this may not be necessary)
+                        CashupDeposit.objects.create(
+                            buyer=referrer,  # Referrer's CashupDeposit
+                            affiliate_profit=affiliate_profit,  # Store the affiliate profit
+                        )
+
+                        # Mark the referral code as used and profit awarded
+                    referral_code.is_used = True
+                    referral_code.affiliate_profit_awarded = True
+                    referral_code.save()  # Save the referral code update
+
         super().save(*args, **kwargs)
+
+
 
 
 # Buyer Transaction Model
@@ -373,6 +441,12 @@ class Slider(models.Model):
     title=models.CharField(max_length=20)
     image=models.CharField(max_length=500, blank=True, null=True, help_text="Image of the product")
 
+class SponsoredBy(models.Model):
+    name=models.CharField(max_length=20)
+    logo_url=models.CharField(max_length=500, blank=True, null=True, help_text="Image of the product")
+
+
+
 
 
 class CashupProfitHistory(models.Model):
@@ -417,10 +491,19 @@ class CashupOwingProfitHistory(models.Model):
 
     def __str__(self):
         return f"Change in {self.field_name} for CashupDeposit {self.cashup_owing_deposit.id} on {self.change_timestamp}"
-
-
-
     
+class CashupDepositHistory(models.Model):
+    cashup_deposit = models.ForeignKey(CashupDeposit, on_delete=models.CASCADE)
+    old_balance = models.DecimalField(max_digits=10, decimal_places=2)
+    new_balance = models.DecimalField(max_digits=10, decimal_places=2)
+    change_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    changed_at = models.DateTimeField(auto_now_add=True)
+    updated_by = models.ForeignKey(Buyer, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"CashupDeposit History: {self.old_balance} -> {self.new_balance} at {self.changed_at}"
+
+
     
 class CheckoutDetail(models.Model):
     purchase=models.ForeignKey(Purchase,on_delete=models.CASCADE)
@@ -432,7 +515,30 @@ class CheckoutDetail(models.Model):
 
     def __str__(self):
         return f"{self.name}"
+    
 
+
+import random
+import string
+
+class ReferralCode(models.Model):
+    code = models.CharField(max_length=255, unique=True)
+    creator = models.ForeignKey(Buyer, on_delete=models.CASCADE, related_name="referral_codes")
+    is_valid = models.BooleanField(default=True)
+    is_used = models.BooleanField(default=False)  # Track if the referral code has been used
+    affiliate_profit_awarded = models.BooleanField(default=False)  # Track if the affiliate profit has been awarded
+
+    def __str__(self):
+        return self.code
+
+
+    @staticmethod
+    def generate_unique_code():
+        """Generate a unique referral code."""
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))  # 8 characters long
+        while ReferralCode.objects.filter(code=code).exists():  # Ensure the code is unique
+            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        return code
 
 # Signal to create Buyer when User is created
 # Signal to create Buyer and Cashup deposits when User is created
@@ -570,6 +676,125 @@ def update_transferhistory_verified(sender, instance, created, **kwargs):
 
         # Update the 'verified' field for all related TransferHistory objects
         transfer_history_records.update(verified=True)
+from django.db.models.signals import post_save
+@receiver(post_save, sender=WithdrawalFromCompoundingProfit)
+def update_compounding_profit(sender, instance, created, **kwargs):
+    # Proceed only if the withdrawal request has been approved
+    if instance.status == 'Approved' and not created:
+        # Ensure the buyer has a related CashupDeposit
+        cashup_deposit = instance.buyer.cashup_deposits.first()  # Assuming one cashup deposit per buyer
+        
+        if cashup_deposit:
+            # Ensure there is enough compounding profit to cover the withdrawal amount
+            if cashup_deposit.compounding_profit >= instance.amount:
+                with transaction.atomic():
+                    # Deduct the amount from the compounding_profit
+                    cashup_deposit.compounding_profit -= instance.amount
+                    
+                    # Add the amount to compounding_withdraw
+                    cashup_deposit.compounding_withdraw += instance.amount
+                    
+                    # Save the updated CashupDeposit
+                    cashup_deposit.save()
+
+                    instance.buyer.main_balance += instance.amount
+                    instance.buyer.save()
+                    # Optionally, log the transaction or update withdrawal history here
+
+            else:
+                # If insufficient funds in compounding profit, reject the withdrawal
+                instance.status = 'Rejected'
+                instance.save()
+
+
+@receiver(post_save, sender=WithdrawalFromDailyProfit)
+def update_daily_profit(sender, instance, created, **kwargs):
+    # Proceed only if the withdrawal request has been approved and is updated (not created)
+    if instance.status == 'Approved' and not created:
+        # Ensure the buyer has a related CashupDeposit
+        cashup_deposit = instance.buyer.cashup_deposits.first()  # Assuming one cashup deposit per buyer
+        
+        if cashup_deposit:
+            # Ensure there is enough daily profit to cover the withdrawal amount
+            if cashup_deposit.daily_profit >= instance.amount:
+                with transaction.atomic():
+                    # Deduct the amount from the daily_profit
+                    cashup_deposit.daily_profit -= instance.amount
+                    
+                    # Add the amount to compounding_withdraw (or another relevant field if necessary)
+                    cashup_deposit.compounding_withdraw += instance.amount
+                    
+                    # Save the updated CashupDeposit
+                    cashup_deposit.save()
+
+                    # Add the amount to the buyer's main_balance
+                    instance.buyer.main_balance += instance.amount
+                    instance.buyer.save()
+
+                    # Optionally, log the transaction or update withdrawal history here
+                    # For example, you can create a new transaction record for this withdrawal
+
+            else:
+                # If insufficient funds in daily profit, reject the withdrawal
+                instance.status = 'Rejected'
+                instance.save()
+
+@receiver(post_save, sender=WithdrawalFromAffiliateProfit)
+def update_affiliate_profit(sender, instance, created, **kwargs):
+    # Proceed only if the withdrawal request has been approved and is updated (not created)
+    if instance.status == 'Approved' and not created:
+        # Ensure the buyer has a related CashupDeposit
+        cashup_deposit = instance.buyer.cashup_deposits.first()  # Assuming one cashup deposit per buyer
+        
+        if cashup_deposit:
+            # Ensure there is enough affiliate profit to cover the withdrawal amount
+            if cashup_deposit.affiliate_profit >= instance.amount:
+                with transaction.atomic():
+                    # Deduct the amount from the affiliate_profit
+                    cashup_deposit.affiliate_profit -= instance.amount
+                    
+                    # Add the amount to affiliate_withdraw (or another relevant field if necessary)
+                    cashup_deposit.affiliate_withdraw += instance.amount
+                    
+                    # Save the updated CashupDeposit
+                    cashup_deposit.save()
+
+                    # Add the amount to the buyer's main_balance
+                    instance.buyer.main_balance += instance.amount
+                    instance.buyer.save()
+
+                    # Optionally, log the transaction or update withdrawal history here
+                    # For example, you can create a new transaction record for this withdrawal
+
+            else:
+                # If insufficient funds in affiliate profit, reject the withdrawal
+                instance.status = 'Rejected'
+                instance.save()
+
+
+
+@receiver(post_save, sender=CashupDeposit)
+def create_cashup_deposit_history(sender, instance, created, **kwargs):
+    # Check if this is an update (not creation) and if cashup_main_balance has changed
+    if not created:
+        try:
+            old_instance = CashupDeposit.objects.get(pk=instance.pk)
+            if old_instance.cashup_main_balance != instance.cashup_main_balance:
+
+                
+                updated_by_user = instance.updated_by if instance.updated_by else instance.user
+
+                CashupDepositHistory.objects.create(
+                    cashup_deposit=instance,
+                    old_balance=old_instance.cashup_main_balance,
+                    new_balance=instance.cashup_main_balance,
+                    change_amount=instance.cashup_main_balance - old_instance.cashup_main_balance,
+                    updated_by=updated_by_user
+                )
+        except CashupDeposit.DoesNotExist:
+            pass
+
+
 
 
 

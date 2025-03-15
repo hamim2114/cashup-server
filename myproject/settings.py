@@ -11,6 +11,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 from datetime import timedelta
+import os
+# import dj_database_url
 
 from pathlib import Path
 
@@ -97,18 +99,52 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+# render postgressQL database
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'cashup_jwdj',       # From Render
+#         'USER': 'cashup_jwdj_user',       # From Render
+#         'PASSWORD': 'uwIYD2Ngb4rA31cmR0pIMrkSjKssK4xX',  # From Render
+#         'HOST': 'dpg-cvajtddumphs73ads3h0-a.oregon-postgres.render.com',       # From Render (e.g., dpg-xxxxxx-a.oregon-postgres.render.com)
+#         'PORT': '5432',                    # Default PostgreSQL port
+#     }
+# }
+
+# postgresql://neondb_owner:npg_GJscOVmS3hg1@ep-cool-meadow-a1wbvvcn-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'neondb',  # Database name
+        'USER': 'neondb_owner',  # Database user
+        'PASSWORD': 'npg_GJscOVmS3hg1',  # Database password
+        'HOST': 'ep-cool-meadow-a1wbvvcn-pooler.ap-southeast-1.aws.neon.tech',  # Neon host
+        'PORT': '5432',  # Default PostgreSQL port
+        'OPTIONS': {
+            'sslmode': 'require',  # Enable SSL
+        },
     }
 }
+
+
+# DATABASES= {
+#     "default":dj_database_url.parse(os.environ.get("DATABASE_URL"))
+
+# }
+
 
 # settings.py
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://cashup-beta.vercel.app/",
       # Allow frontend access
 ]
 
@@ -116,7 +152,6 @@ CORS_ALLOW_CREDENTIALS = True  # Allow cookies, tokens, etc.
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",  # Allow CSRF protection for frontend
-    "https://cashup-beta.vercel.app/",  # Allow CSRF protection for frontend
 ]
 
 

@@ -2,11 +2,12 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from myapi.views import ProductView, ItemView,ResetPasswordView, ProfileView,ForgotPasswordView,PlaceOrderView,CashupOwingProfitHistoryListView,WithdrawalRequestAPIView,CashupProfitHistoryListView,SliderCreateView,TransferToCashupOwingDPSView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
+from myapi.views import ProductView, ItemView,ResetPasswordView,WithdrawalRequestFromDailyProfitAPIView, ProfileView,ReferralCodeView,ForgotPasswordView,CashupDepositHistoryView,PlaceOrderView,CashupOwingProfitHistoryListView,WithdrawalRequestAPIView,CashupProfitHistoryListView,SliderCreateView,TransferToCashupOwingDPSView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView 
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.conf.urls.static import static
+
 
 
 admin.site.site_header= 'CashUp'
@@ -59,9 +60,10 @@ urlpatterns = [
     path('cashup-owing-profit-history/', CashupOwingProfitHistoryListView.as_view(), name='cashup-owing-profit-history'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
+    path('generate-affliate-code/',ReferralCodeView.as_view(),name='generate-affliate-code'),
+    path('withdraw-from-daily-profit',WithdrawalRequestFromDailyProfitAPIView.as_view(),name='withdraw-from-daily-profit')
 
 
     
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-     
 

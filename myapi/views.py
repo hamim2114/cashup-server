@@ -366,6 +366,39 @@ class RegisterView(APIView):
         
         # If the data is not valid, return errors
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+
+from rest_framework.exceptions import NotFound
+ # Ensure the user is authenticated
+from .models import ReferralCode, Buyer
+
+class ReferralCodeView(APIView):
+    """
+    API View to generate a new referral code with the logged-in user as the creator (Buyer).
+    """
+    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+
+    def post(self, request):
+        # Get the logged-in user (buyer)
+        buyer = request.user
+
+        # Ensure the user is a Buyer (you might want to confirm this based on your user model)
+        if not isinstance(buyer, Buyer):
+            return Response({'detail': 'User is not a valid Buyer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create a new referral code for the logged-in buyer (creator)
+        referral_code = ReferralCode.objects.create(
+            code=ReferralCode.generate_unique_code(),
+            creator=buyer,  # The logged-in buyer is the creator of the referral code
+            is_valid=True,  # Set valid as per business rules
+        )
+
+        return Response({
+            'referral_code': referral_code.code,
+            'message': 'Referral code generated successfully'
+        }, status=status.HTTP_201_CREATED)
 
 
 
@@ -1316,6 +1349,18 @@ class WithdrawalRequestAPIView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+from .models import CashupDepositHistory
+from .serializers import CashupDepositHistorySerializer
+    
+class CashupDepositHistoryView(generics.ListAPIView):
+    serializer_class = CashupDepositHistorySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Get the logged-in user's cashup deposit history
+        return CashupDepositHistory.objects.filter(updated_by=self.request.user)
+    
 from .models import WithdrawalFromMainBalance
 from .serializers import WithdrawalFromMainBalanceSerializer
     
@@ -1366,6 +1411,43 @@ class WithdrawalRequestFromCompoundingProfitAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from .models import WithdrawalFromDailyProfit
+from .serializers import WithdrawalFromDailyProfitSerializer
+
+class WithdrawalRequestFromDailyProfitAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """
+        List all withdrawal requests for the logged-in user from daily profit.
+        """
+        # Get all withdrawal requests for the logged-in user, ordered by most recent
+        withdrawal_requests = WithdrawalFromDailyProfit.objects.filter(buyer=request.user).order_by('-date')
+        
+        # Serialize the data
+        serializer = WithdrawalFromDailyProfitSerializer(withdrawal_requests, many=True)
+        
+        # Return the serialized data in the response
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Create a new withdrawal request for the logged-in user from daily profit.
+        """
+        # Pass request context for the serializer (which can be used to reference the logged-in user)
+        serializer = WithdrawalFromDailyProfitSerializer(data=request.data, context={'request': request})
+
+        if serializer.is_valid():
+            # Save the withdrawal request
+            serializer.save()
+
+            # Return the created withdrawal request in the response with a 201 status code
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        # If serializer is invalid, return errors with a 400 status code
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 

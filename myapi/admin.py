@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Purchase, Buyer,BuyerOTP,Slider,WithdrawalFromCashupBalance,CashupOwingProfitHistory,CashupProfitHistory,TransferHistory,WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
+from .models import Purchase, Buyer,BuyerOTP,Slider,ReferralCode,WithdrawalFromDailyProfit,CashupDepositHistory,WithdrawalFromCashupBalance,CashupOwingProfitHistory,CashupProfitHistory,TransferHistory,WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
 from .models import User
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _  # Import for translation support
@@ -12,7 +12,7 @@ class ItemAdmin(admin.ModelAdmin):
 class PurchaseAdmin(admin.ModelAdmin):
     search_fields=['phone_number']
     readonly_fields = ['total_price']
-    
+
 class CashupAdmin(admin.ModelAdmin):
     list_display = ('buyer', 'cashup_main_balance', 'created_at', 'daily_profit', 'compounding_profit', 
                     'monthly_profit', 'withdraw', 'product_profit')
@@ -228,6 +228,10 @@ admin.site.register(CashupProfitHistory,CashupProfitHistoryAdmin)
 admin.site.register(CashupOwingProfitHistory,CashupOwingProfitHistoryAdmin)
 admin.site.register(BuyerOTP)
 admin.site.register(Slider)
+admin.site.register(WithdrawalFromCompoundingProfit)
+admin.site.register(CashupDepositHistory)
+admin.site.register(ReferralCode)
+admin.site.register(WithdrawalFromDailyProfit)
 
 
 

@@ -188,7 +188,7 @@ def validate_password(value):
 from rest_framework import serializers
 from .models import BuyerTransaction
 from decimal import Decimal
-
+from django.core.validators import RegexValidator
 class BuyerTransactionSerializer(serializers.ModelSerializer):
     date=serializers.DateTimeField(format="%Y-%m-%d %H:%M",read_only=True)
     class Meta:
@@ -206,7 +206,25 @@ class BuyerTransactionSerializer(serializers.ModelSerializer):
         # Optionally add extra logic before saving, such as calculating main balance or other operations
         return super().create(validated_data)
 
+from .models import ReferralCode
 
+
+from rest_framework import serializers
+from django.core.validators import RegexValidator
+from .models import Buyer, ReferralCode
+import re
+
+# Define a regex for Bangladeshi phone numbers (optional +880)
+phone_number_validator = RegexValidator(
+    regex=r'^(?:\+880|880|01)[1-9]\d{8}$',
+    message="Phone number must be a valid Bangladeshi number, starting with +880 or 880 or 01."
+)
+
+# Custom password validator to ensure it is 6 digits and contains only numbers
+def validate_password(value):
+    if len(value) != 6 or not value.isdigit():
+        raise serializers.ValidationError("Password must be exactly 6 digits long and contain only numbers.")
+    return value
 
 class RegisterSerializer(serializers.ModelSerializer):
     username = serializers.CharField(
@@ -215,34 +233,38 @@ class RegisterSerializer(serializers.ModelSerializer):
     )
     phone_number = serializers.CharField(
         required=True,
-        validators=[UniqueValidator(queryset=Buyer.objects.all(), message="Phone number already exists.")]
+        validators=[phone_number_validator, UniqueValidator(queryset=Buyer.objects.all(), message="Phone number already exists.")]
     )
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, validators=[validate_password])  # Validate password as per the custom rule
     confirm_password = serializers.CharField(write_only=True, required=True)
+    referral_code = serializers.CharField(required=False, allow_blank=True)  # Optional field for referral code
 
     class Meta:
         model = Buyer
-        fields = ('id', 'name', 'username', 'phone_number', 'password', 'confirm_password', 'buyer_image', 'gender', 'date_of_birth')
-
-    def validate_password(self, value):
-        """Validate password strength."""
-        try:
-            validate_password(value)
-        except ValidationError as e:
-            raise serializers.ValidationError(e.messages)
-        return value
+        fields = ('id', 'name', 'username', 'phone_number', 'password', 'confirm_password', 'buyer_image', 'gender', 'date_of_birth', 'referral_code')
 
     def validate(self, data):
         """Ensure password and confirm_password match."""
         if data["password"] != data["confirm_password"]:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        
+        # Validate referral code if provided
+        referral_code = data.get("referral_code")
+        if referral_code:
+            try:
+                referral = ReferralCode.objects.get(code=referral_code, is_valid=True, is_used=False)
+                data['referral_code_used'] = referral  # Assign the valid referral code to the user
+            except ReferralCode.DoesNotExist:
+                raise serializers.ValidationError({"referral_code": "Invalid or already used referral code."})
+
         return data
 
     def create(self, validated_data):
         """Create a new user and handle unique constraint errors."""
         try:
             validated_data.pop("confirm_password")  # Remove confirm_password before saving
-            
+            referral_code = validated_data.pop('referral_code_used', None)  # Get referral code from validated data
+
             # Set username to phone_number if not provided
             username = validated_data.get("username", validated_data["phone_number"])
 
@@ -256,10 +278,24 @@ class RegisterSerializer(serializers.ModelSerializer):
             )
             user.set_password(validated_data["password"])  # Hash password
             user.save()
+
+            # If a valid referral code was used, associate it with the new user
+            if referral_code:
+                user.referral_code_used = referral_code  # Store the referral code in the user
+                user.used_referral_code = True  # Mark the user as having used a referral code
+                user.save()
+
+                # Mark the referral code as used
+                referral_code.is_used = True
+                referral_code.save()
+
             return user
 
         except Exception as e:
             raise serializers.ValidationError({"error": f"Failed to create user: {str(e)}"})
+
+
+
 
 
 
@@ -426,7 +462,18 @@ class SliderSerializer(serializers.ModelSerializer):
         model=Slider
         fields='__all__'
 
-    
+
+
+
+from . models import CashupDepositHistory
+
+class CashupDepositHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CashupDepositHistory
+        fields = ['old_balance', 'new_balance', 'change_amount', 'changed_at', 'updated_by']
+
+
+
 
 from .models import WithdrawalFromCompoundingProfit
 class WithdrawalFromCompoundingProfitSerializer(serializers.ModelSerializer):
@@ -445,6 +492,27 @@ class WithdrawalFromCompoundingProfitSerializer(serializers.ModelSerializer):
         # Set the buyer to the currently logged-in user
         validated_data['buyer'] = self.context['request'].user
         return super().create(validated_data)
+    
+from rest_framework import serializers
+from .models import WithdrawalFromDailyProfit
+
+class WithdrawalFromDailyProfitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WithdrawalFromDailyProfit
+        fields = '__all__'  # Include all fields in the model
+        read_only_fields = ('buyer',)  # Make the buyer field read-only
+
+    def to_representation(self, instance):
+        """Override to exclude 'buyer' from API response."""
+        representation = super().to_representation(instance)
+        representation.pop('buyer', None)  # Remove the 'buyer' field from the response
+        return representation
+
+    def create(self, validated_data):
+        # Set the buyer to the currently logged-in user
+        validated_data['buyer'] = self.context['request'].user
+        return super().create(validated_data)
+
 
 
 from django.core.exceptions import ValidationError
