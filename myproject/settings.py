@@ -151,10 +151,12 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies, tokens, etc.
 
+# Allow CSRF protection for frontend
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",  # Allow CSRF protection for frontend
-    "https://cashup-beta.vercel.app",  # Allow CSRF protection for frontend
-    "https://*.onrender.com",  # Allow CSRF protection for frontend
+    "http://localhost:3000",  
+    "https://cashup-beta.vercel.app", 
+    "https://*.onrender.com", 
+    "https://*.railway.app", 
 ]
 
 
