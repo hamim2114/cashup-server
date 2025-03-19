@@ -10,10 +10,11 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction 
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
-
-
-
-
+from rest_framework import viewsets
+from rest_framework.filters import SearchFilter
+from django_filters import rest_framework as filters
+from django_filters.rest_framework import DjangoFilterBackend
+from .models import Category
 
 
 # Create your views here.
@@ -31,12 +32,24 @@ class BuyerView(viewsets.ModelViewSet):
     """
     queryset = Buyer.objects.all()
     serializer_class = BuyerSerializer
+
+class ItemFilter(filters.FilterSet):
+    category = filters.ModelChoiceFilter(queryset=Category.objects.all())  # Filter by category
+    name = filters.CharFilter(field_name='name', lookup_expr='icontains')  # Optional: Search by name
+
+    class Meta:
+        model = Item
+        fields = ['category', 'name'] 
 class ItemView(viewsets.ModelViewSet):
     """
     This viewset automatically provides `list`, `retrieve`, `create`, `update`, and `destroy` actions.
     """
     queryset = Item.objects.all()
     serializer_class = ItemSerializer
+    filter_backends = (DjangoFilterBackend, SearchFilter)
+    filterset_class = ItemFilter 
+    filter_backends = (SearchFilter,)
+    search_fields = ['name', 'description']
 
 
 class CartedProductDelete(APIView):
@@ -64,6 +77,7 @@ class ConfirmedProductsList(generics.ListAPIView):
     def get_queryset(self):
         # Get only confirmed purchases for the logged-in user
         return Purchase.objects.filter(buyer=self.request.user, confirmed=True).order_by('-id')
+
     
     # Define the serializer class
     serializer_class = PurchaseSerializer
@@ -125,7 +139,17 @@ class CashupProfitHistoryListView(generics.ListAPIView):
     def get_queryset(self):
         # Filter only by the logged-in user (updated_by = request.user)
         return CashupProfitHistory.objects.filter(updated_by=self.request.user)
-    
+
+class CompoundingProfitHistoryListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = CashupProfitHistorySerializer
+
+    def get_queryset(self):
+        # Filter by the logged-in user and the specific field_name
+        return CashupProfitHistory.objects.filter(
+            updated_by=self.request.user, field_name="compounding_profit"
+        )
+
 
 class CashupOwingProfitHistoryListView(generics.ListAPIView):
     permission_classes=[IsAuthenticated]
@@ -226,26 +250,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
-from .models import Buyer, BuyerTransaction
-from .serializers import BuyerTransactionSerializer
 
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
-from .models import Buyer, BuyerTransaction
-from .serializers import BuyerTransactionSerializer
-# views.py
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
-from .models import Buyer, BuyerTransaction
-from .serializers import BuyerTransactionSerializer
+
 
 # views.py
 from rest_framework import status
@@ -387,6 +393,12 @@ class ReferralCodeView(APIView):
         # Ensure the user is a Buyer (you might want to confirm this based on your user model)
         if not isinstance(buyer, Buyer):
             return Response({'detail': 'User is not a valid Buyer.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if ReferralCode.objects.filter(creator=buyer).exists():
+            return Response(
+                {"detail": "You already have a referral code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Create a new referral code for the logged-in buyer (creator)
         referral_code = ReferralCode.objects.create(
@@ -397,7 +409,7 @@ class ReferralCodeView(APIView):
 
         return Response({
             'referral_code': referral_code.code,
-            'message': 'Referral code generated successfully'
+            'message': 'Affliate code generated successfully'
         }, status=status.HTTP_201_CREATED)
 
 
@@ -520,7 +532,7 @@ class ForgotPasswordView(APIView):
     This view will:
     - Validate the phone number.
     - Generate and save an OTP.
-    - Send the OTP to the user's phone (not implemented here).
+    - otp the OTP to the user's phone (not implemented here).
     """
 
     def post(self, request, *args, **kwargs):
@@ -622,6 +634,21 @@ class ResetPasswordView(APIView):
         otp_entry.delete()
 
         return Response({"detail": "Password has been successfully reset."}, status=status.HTTP_200_OK)
+
+
+from .models import CompanyNumber
+from .serializers import CompanyNumberSerializer
+
+class CompanyNumberListView(APIView):
+    def get(self, request, *args, **kwargs):
+        # Get all company numbers from the database
+        company_numbers = CompanyNumber.objects.all()
+
+        # Serialize the data
+        serializer = CompanyNumberSerializer(company_numbers, many=True)
+
+        # Return the serialized data in the response
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 
@@ -954,25 +981,26 @@ class PurchaseProduct(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # views.py
-import random
-import requests
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Buyer, BuyerOTP
-from .serializers import BuyerOTPSerializer
+# views.py
 import random
 import os
 import requests
-from urllib.parse import urlencode
-from django.conf import settings
+from datetime import datetime, timedelta
+from urllib.parse import urlencode, quote_plus
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from .models import Buyer, BuyerOTP
-from datetime import datetime, timedelta
-from urllib.parse import quote_plus
+from rest_framework.permissions import AllowAny
+
+
+import logging
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.response import Response
+from rest_framework import status
+
+logger = logging.getLogger(__name__)
 
 class SendOTPToBuyer(APIView):
     permission_classes = [AllowAny]
@@ -980,27 +1008,35 @@ class SendOTPToBuyer(APIView):
     def post(self, request):
         phone_number = request.data.get('phone_number')
         if not phone_number:
+            logger.error('Phone number is required')
             return Response({'error': 'Phone number is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             buyer = Buyer.objects.get(phone_number=phone_number)
         except Buyer.DoesNotExist:
+            logger.error(f'Buyer not found for phone number: {phone_number}')
             return Response({'error': 'Buyer not found'}, status=status.HTTP_404_NOT_FOUND)
 
         otp = str(random.randint(100000, 999999))
-        # Save OTP to database with expiration time (e.g., 5 minutes)
-        expires_at = datetime.now() + timedelta(minutes=5)
-        otp_instance = BuyerOTP.objects.create(buyer=buyer, otp=otp)
+        # Use timezone-aware datetime for expires_at
+        expires_at = timezone.now() + timedelta(minutes=5)
 
-        # Send OTP via BulkSMS BD
-        api_key = os.getenv('BULKSMS_API_KEY', 'SWquPhr2vD7nuBMYtbZU')  # Use environment variable for API key
+        try:
+            otp_instance = BuyerOTP.objects.create(buyer=buyer, otp=otp, expires_at=expires_at)
+        except Exception as e:
+            logger.exception('Error creating OTP instance')
+            return Response({'error': 'An error occurred while creating OTP', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Continue with your code to send the OTP...
+
+        # Send OTP via BulkSMS BD (example)
+        api_key = os.getenv('BULKSMS_API_KEY', 'n2HH10dNkbbVeSB1TamR')  # Use environment variable for API key
         sender_id = os.getenv('BULKSMS_SENDER_ID', '8809617624800')  # Use environment variable for sender ID
         message = f'Your Cashup OTP is {otp}'
 
         # URL encode the message to handle special characters
         encoded_message = quote_plus(message)
 
-        # Build the URL with query parameters
         params = {
             'api_key': api_key,
             'type': 'text',
@@ -1013,19 +1049,17 @@ class SendOTPToBuyer(APIView):
         try:
             response = requests.get(url)
             if response.status_code == 200:
-                response_data = response.json()  # assuming the response is in JSON format
-                # Check for success code
+                response_data = response.json()
                 if response_data.get('status_code') == 202:
                     return Response({'message': 'OTP sent successfully'}, status=status.HTTP_200_OK)
                 else:
-                    # Handle specific API error codes
                     error_code = response_data.get('status_code', 'Unknown')
                     error_message = self.get_error_message(error_code)
                     return Response({'error': error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             else:
                 return Response({'error': 'Failed to send OTP, please try again later'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except requests.RequestException as e:
-            # Log the exception for better debugging
+            logger.exception('Error sending OTP request')
             return Response({'error': 'An error occurred while sending OTP', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get_error_message(self, error_code):
@@ -1052,6 +1086,7 @@ class SendOTPToBuyer(APIView):
             1032: 'IP is not whitelisted.',
         }
         return error_messages.get(error_code, 'Unknown error occurred')
+
 
 
 class VerifyBuyerOTP(APIView):
@@ -1175,13 +1210,33 @@ class SliderCreateView(APIView):
         
         # Return serialized data as response
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
 
 
+from .models import SponsoredBy
+from .serializers import SponseredBySerializer
+
+class SponsoredByCreateView(APIView):
+    def get(self, request, *args, **kwargs):
+        # Retrieve all slider data
+        sliders = SponsoredBy.objects.all()  # You can apply filters if needed
+        
+        # Serialize the data
+        serializer = SponseredBySerializer(sliders, many=True)
+        
+        # Return serialized data as response
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+from .models import ReferralCode
+from .serializers import ReferralCodeSerializer
 
-
-
+# views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Buyer, Purchase
+from .serializers import BuyerSerializer, PurchaseSerializer
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1206,10 +1261,11 @@ class ProfileView(APIView):
         # Combine the serialized data
         response_data = {
             "buyer": buyer_serializer.data,
-            "purchases": purchase_serializer.data  # Include the list of purchases
+            "purchases": purchase_serializer.data,  # Include the list of purchases
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
+
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -1448,12 +1504,168 @@ class WithdrawalRequestFromDailyProfitAPIView(APIView):
         # If serializer is invalid, return errors with a 400 status code
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+from .models import WithdrawalFromAffiliateProfit
+from .serializers import WithdrawalFromAffiliateProfitSerializer
+
+
+class WithdrawalRequestFromAffiliateProfitAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """
+        List all withdrawal requests for the logged-in user from affiliate profit.
+        """
+        # Get all withdrawal requests for the logged-in user, ordered by most recent
+        withdrawal_requests = WithdrawalFromAffiliateProfit.objects.filter(buyer=request.user).order_by('-date')
+        
+        # Serialize the data
+        serializer = WithdrawalFromAffiliateProfitSerializer(withdrawal_requests, many=True)
+        
+        # Return the serialized data in the response
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Create a new withdrawal request for the logged-in user from affiliate profit.
+        """
+        # Pass request context for the serializer (which can be used to reference the logged-in user)
+        serializer = WithdrawalFromAffiliateProfitSerializer(data=request.data, context={'request': request})
+
+        if serializer.is_valid():
+            # Save the withdrawal request
+            serializer.save()
+
+            # Return the created withdrawal request in the response with a 201 status code
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        # If serializer is invalid, return errors with a 400 status code
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from itertools import chain
+from .models import (
+    WithdrawalFromCompoundingProfit,
+    WithdrawalFromMainBalance,
+    WithdrawalFromCashupBalance,
+    WithdrawalFromDailyProfit,
+    WithdrawalFromAffiliateProfit
+)
+from .serializers import WithdrawalSerializer
+
+class WithdrawalHistoryView(APIView):
+    def get(self, request, *args, **kwargs):
+        # Fetch all withdrawal records from different models
+        compounding_withdrawals = WithdrawalFromCompoundingProfit.objects.all()
+        main_balance_withdrawals = WithdrawalFromMainBalance.objects.all()
+        cashup_withdrawals = WithdrawalFromCashupBalance.objects.all()
+        daily_profit_withdrawals = WithdrawalFromDailyProfit.objects.all()
+        affiliate_profit_withdrawals = WithdrawalFromAffiliateProfit.objects.all()
+
+        # Merge all the withdrawal querysets
+        all_withdrawals = list(chain(
+            compounding_withdrawals,
+            main_balance_withdrawals,
+            cashup_withdrawals,
+            daily_profit_withdrawals,
+            affiliate_profit_withdrawals
+        ))
+
+        # Sort all withdrawals by date in descending order
+        sorted_withdrawals = sorted(all_withdrawals, key=lambda x: x.date, reverse=True)
+
+        # Serialize the withdrawals
+        serializer = WithdrawalSerializer(sorted_withdrawals, many=True)
+
+        # Return the serialized data
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated  # IsAuthenticated permission
+from rest_framework.views import APIView
+from .serializers import ChangePasswordSerializer
+
+
+class ChangePasswordView(APIView):
+    def post(self, request, *args, **kwargs):
+        # Initialize the serializer with data from the request
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        
+        # Validate the data
+        if not serializer.is_valid():
+            # Return validation errors as response
+            return Response({
+                "error": "Validation failed",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Call the save method, which may return a success or error response
+        save_result = serializer.save()
+
+        # If the response contains an error
+        if "error" in save_result:
+            return Response({
+                "error": save_result["error"]
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # If the response contains a success message
+        return Response({
+            "message": save_result["success"]
+        }, status=status.HTTP_200_OK)
 
 
 
+class ReferralGetCodeView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request, *args, **kwargs):
+        # Fetch all referral codes associated with the authenticated user
+        referral_codes = ReferralCode.objects.filter(creator=request.user)
 
+        # Serialize the referral codes
+        serializer = ReferralCodeSerializer(referral_codes, many=True)
 
+        # Return the serialized data
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+from .serializers import ProductAdSliderSerializer
+from .models import ProductAdSlider
+class ProductAdSliderView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def get(self, request, *args, **kwargs):
+        # Fetch all ProductAdSlider instances
+        product_ad_slider = ProductAdSlider.objects.all()
+        serializer = ProductAdSliderSerializer(product_ad_slider, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+from .serializers import ItemSerializer
+from django.db.models import Q
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Item
+from .serializers import ItemSerializer
+from rest_framework.permissions import AllowAny
 
+class ItemSearchAPIView(APIView):
+    permission_classes = [AllowAny]  # You can change this to IsAuthenticated if needed
+
+    def get(self, request, *args, **kwargs):
+        search_query = request.GET.get('search', '')  # Get the search query from the URL
+        
+        if len(search_query) < 2:
+            return Response({"detail": "Search query must be at least 2 characters."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter items by name using the 'icontains' filter (case-insensitive)
+        items = Item.objects.filter(name__icontains=search_query)[:2]  # Limit to 2 results
+
+        # If no items are found, return an empty list
+        if not items:
+            return Response([], status=status.HTTP_200_OK)
+        
+        # Serialize the items
+        serializer = ItemSerializer(items, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

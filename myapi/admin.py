@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Purchase, Buyer,BuyerOTP,Slider,ReferralCode,WithdrawalFromDailyProfit,CashupDepositHistory,WithdrawalFromCashupBalance,CashupOwingProfitHistory,CashupProfitHistory,TransferHistory,WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
+from .models import Purchase, Buyer,BuyerOTP,Slider,ProductAdSlider,SponsoredBy,ReferralCode,WithdrawalFromDailyProfit,CashupDepositHistory,WithdrawalFromCashupBalance,CashupOwingProfitHistory,CashupProfitHistory,TransferHistory,WithdrawalFromCompoundingProfit,WithdrawalFromMainBalance,Category ,Item ,CheckoutDetail,CashupOwingDeposit , CashupDeposit , BuyerTransaction
 from .models import User
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _  # Import for translation support
@@ -211,6 +211,11 @@ class WithdrawalFromCmpoundingProfitAdmin(admin.ModelAdmin):
 
 
 
+from .models import CompanyNumber 
+
+class CompanyNumberAdmin(admin.ModelAdmin):
+    list_display = ('company_number',)  # Show company number in the admin list view
+
     
 # Register the custom admin class
 admin.site.register(CashupOwingDeposit, CashupOwingDepositAdmin)
@@ -232,7 +237,9 @@ admin.site.register(WithdrawalFromCompoundingProfit)
 admin.site.register(CashupDepositHistory)
 admin.site.register(ReferralCode)
 admin.site.register(WithdrawalFromDailyProfit)
-
+admin.site.register(SponsoredBy)
+admin.site.register(CompanyNumber)
+admin.site.register(ProductAdSlider)
 
 
 

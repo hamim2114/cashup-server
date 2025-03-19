@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from myapi.views import ProductView, ItemView,ResetPasswordView,WithdrawalRequestFromDailyProfitAPIView, ProfileView,ReferralCodeView,ForgotPasswordView,CashupDepositHistoryView,PlaceOrderView,CashupOwingProfitHistoryListView,WithdrawalRequestAPIView,CashupProfitHistoryListView,SliderCreateView,TransferToCashupOwingDPSView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
+from myapi.views import ProductView, ItemView,ResetPasswordView,SponsoredByCreateView,ProductAdSliderView,ReferralGetCodeView,CompoundingProfitHistoryListView,ChangePasswordView,CompanyNumberListView,WithdrawalHistoryView,WithdrawalRequestFromDailyProfitAPIView,WithdrawalRequestFromAffiliateProfitAPIView, ProfileView,ReferralCodeView,ForgotPasswordView,CashupDepositHistoryView,PlaceOrderView,CashupOwingProfitHistoryListView,WithdrawalRequestAPIView,CashupProfitHistoryListView,SliderCreateView,TransferToCashupOwingDPSView,WithdrawalRequestFromCompoundingProfitAPIView,WithdrawalRequestFromMianBalanceAPIView,CheckoutDetailsView, CartedProductDelete,BuyerView,RegisterView,LoginAPIView,SendOTPToBuyer,VerifyBuyerOTP,BuyerDetail,BuyerTransactionCreateView, UpdateBuyerProfileAPIView, DepositToMainBalance, TransferToCashupDeposit, TransferToCashupOwingDeposit, PurchaseProduct,ConfirmedProductsList,CashupOwingDepositByBuyerAPIView,CashupDepositByBuyerAPIView,ConfirmedBuyersForProducts,BuyerPurchasesAPIView , ConfirmedBuyerView,ProductDetail, CartedProductsList
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView 
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -31,12 +31,12 @@ urlpatterns = [
     path('api/confirmed-products/', ConfirmedProductsList.as_view(), name='confirmed-products'),
     path('api/carted-products/', CartedProductsList.as_view(), name='carted-products'),
     path('api/product/<int:pk>/', ProductDetail.as_view(), name='product-detail'),
-     path('api/confirmed-buyers/', ConfirmedBuyerView.as_view(), name='confirmed-buyer'),
-     path('api/confirmed-buyersforproduct/', ConfirmedBuyersForProducts.as_view(), name='confirmed-buyersforproduct'),
-     path('api/buyer-purchases/', BuyerPurchasesAPIView.as_view(), name='buyer-purchases'),
-     path('api/cashup-deposit/', CashupDepositByBuyerAPIView.as_view(), name='cashup-deposit'),
-     path('api/register/', RegisterView.as_view(), name='register'),
-     path('api/login/', LoginAPIView.as_view(), name='login'),
+    path('api/confirmed-buyers/', ConfirmedBuyerView.as_view(), name='confirmed-buyer'),
+    path('api/confirmed-buyersforproduct/', ConfirmedBuyersForProducts.as_view(), name='confirmed-buyersforproduct'),
+    path('api/buyer-purchases/', BuyerPurchasesAPIView.as_view(), name='buyer-purchases'),
+    path('api/cashup-deposit/', CashupDepositByBuyerAPIView.as_view(), name='cashup-deposit'),
+    path('api/register/', RegisterView.as_view(), name='register'),
+    path('api/login/', LoginAPIView.as_view(), name='login'),
     path('update-profile/', UpdateBuyerProfileAPIView.as_view(), name='update-profile'),
     path('api/deposit/', DepositToMainBalance.as_view(), name='deposit-to-main-balance'),
     path('api/transfer-to-cashup-deposit/', TransferToCashupDeposit.as_view(), name='transfer-to-cashup-deposit'),
@@ -61,9 +61,17 @@ urlpatterns = [
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot-password'),
     path('generate-affliate-code/',ReferralCodeView.as_view(),name='generate-affliate-code'),
-    path('withdraw-from-daily-profit',WithdrawalRequestFromDailyProfitAPIView.as_view(),name='withdraw-from-daily-profit')
+    path('withdraw-from-daily-profit/',WithdrawalRequestFromDailyProfitAPIView.as_view(),name='withdraw-from-daily-profit'),
+    path('withdraw-from-affiliate-profit/',WithdrawalRequestFromAffiliateProfitAPIView.as_view(),name='withdraw-from-affiliate-profit'),
+    path('compounding-profit-history/',CompoundingProfitHistoryListView.as_view(),name='compounding-profit-history'),
+    path('withdrawal-history/',WithdrawalHistoryView.as_view(),name='withdrawal-history'),
+    path('company-number/',CompanyNumberListView.as_view(),name='company-number'),
+    path('change-password/',ChangePasswordView.as_view(),name='change-password'),
+    path('refer-code/',ReferralGetCodeView.as_view(),name='refer-code'),
+    path('product-ad-slider/',ProductAdSliderView.as_view(),name='refer-code'),
+    path('sponsored-by/', SponsoredByCreateView.as_view(), name='sponsored-by'),
 
-
+    
     
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

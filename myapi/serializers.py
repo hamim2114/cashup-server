@@ -24,11 +24,22 @@ class ItemSerializer(serializers.ModelSerializer):
         model = Item
         fields = ['id', 'name', 'description', 'is_available', 'price','category','members_price','item_image','discount_price']
 
+from .models import ReferralCode
+
+class ReferralCodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReferralCode
+        fields = ['code', 'is_valid']
+
+
 # Buyer Serializer
 class BuyerSerializer(serializers.ModelSerializer):
+
+    referral_code = ReferralCodeSerializer(read_only=True)
+                                            
     class Meta:
         model = Buyer
-        fields = ['id', 'name', 'phone_number','main_balance','date_of_birth','gender', 'membership_status','address', 'main_balance','buyer_image']
+        fields = ['id', 'name', 'phone_number','main_balance','date_of_birth','gender', 'membership_status','address', 'referral_code','main_balance','buyer_image']
 
 # Purchase Serializer
 from rest_framework import serializers
@@ -42,7 +53,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Purchase
-        fields = ['id', 'item', 'quantity', 'total_price', 'discount_total_price', 'total_membership_price','confirmed', 'paid']
+        fields = ['id', 'item', 'quantity', 'total_price', 'discount_total_price','created_at', 'total_membership_price','confirmed', 'paid']
 
 from rest_framework import serializers
 from .models import TransferHistory , TransferHistoryofCashup 
@@ -71,6 +82,16 @@ class TransferHistoryofCashupSerializer(serializers.ModelSerializer):
     class Meta:
         model = TransferHistoryofCashup
         fields = ['buyer', 'amount', 'date']  # Fields you want to expose
+
+
+from rest_framework import serializers
+from .models import CompanyNumber
+
+class CompanyNumberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyNumber
+        fields = ['company_number']  # Fields to include in the serialized data
+
 
         
 
@@ -126,8 +147,6 @@ class PurchaseProductSerializer(serializers.ModelSerializer):
 
 
 
-
-
 class CashupOwingDepositSerializer(serializers.ModelSerializer):
     buyer = BuyerSerializer(read_only=True)  # Nested serializer for buyer (read-only)
 
@@ -163,6 +182,7 @@ class CashupDepositSerializer(serializers.ModelSerializer):
             'cashup_main_balance',  # Updated field name (from cashup_owing_main_balance)
             'buyer',
             'created_at',
+            'affiliate_profit',
             'daily_profit',
             'compounding_profit',
             'monthly_profit',
@@ -341,10 +361,32 @@ class UpdateBuyerProfileSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import BuyerOTP
 
+from rest_framework import serializers
+from django.utils import timezone
+from .models import BuyerOTP
+
 class BuyerOTPSerializer(serializers.ModelSerializer):
+    # You can adjust the date format or handle timezone issues here
     class Meta:
         model = BuyerOTP
-        fields = ['buyer', 'otp', 'created_at', 'is_verified']
+        fields = ['buyer', 'otp', 'created_at', 'expires_at', 'is_verified']
+
+    def to_representation(self, instance):
+        """
+        Customize the output format of `expires_at` to ensure it's timezone-aware.
+        """
+        representation = super().to_representation(instance)
+
+        # Ensure `expires_at` is timezone-aware before serialization
+        expires_at = representation.get('expires_at')
+
+        if expires_at:
+            # Convert `expires_at` to the correct time zone
+            expires_at = timezone.localtime(expires_at)
+            representation['expires_at'] = expires_at.isoformat()
+
+        return representation
+
 
 class CheckoutDetailsSerializer(serializers.ModelSerializer):
     class Meta:
@@ -455,12 +497,26 @@ class CashupOwingProfitHistorySerializer(serializers.ModelSerializer):
         # Format change_timestamp to display only date and time up to minute (no seconds or microseconds)
         representation['change_timestamp'] = instance.change_timestamp.strftime('%Y-%m-%d %H:%M')
         return representation
+from .models import SponsoredBy
 
 
 class SliderSerializer(serializers.ModelSerializer):
     class Meta:
         model=Slider
         fields='__all__'
+class SponseredBySerializer(serializers.ModelSerializer):
+    class Meta:
+        model=SponsoredBy
+        fields='__all__'
+
+from .models import ProductAdSlider
+
+class ProductAdSliderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductAdSlider
+        fields = ['id', 'title', 'logo_url']
+
+
 
 
 
@@ -512,6 +568,27 @@ class WithdrawalFromDailyProfitSerializer(serializers.ModelSerializer):
         # Set the buyer to the currently logged-in user
         validated_data['buyer'] = self.context['request'].user
         return super().create(validated_data)
+    
+from rest_framework import serializers
+from .models import WithdrawalFromAffiliateProfit
+
+class WithdrawalFromAffiliateProfitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WithdrawalFromAffiliateProfit
+        fields = '__all__'
+        read_only_fields = ('buyer',)  # Make the buyer field read-only to prevent external modification
+
+    def to_representation(self, instance):
+        """Override to exclude 'buyer' from API response."""
+        representation = super().to_representation(instance)
+        representation.pop('buyer', None)  # Remove the 'buyer' field from the response
+        return representation
+
+    def create(self, validated_data):
+        # Set the buyer to the currently logged-in user
+        validated_data['buyer'] = self.context['request'].user
+        return super().create(validated_data)
+
 
 
 
@@ -560,4 +637,109 @@ class ResetPasswordSerializer(serializers.Serializer):
         if len(value) < 5:
             raise serializers.ValidationError("Password must be at least 8 characters long.")
         return value
+
+
+
+
+from rest_framework import serializers
+from .models import (
+    WithdrawalFromCompoundingProfit,
+    WithdrawalFromMainBalance,
+    WithdrawalFromCashupBalance,
+    WithdrawalFromDailyProfit,
+    WithdrawalFromAffiliateProfit
+)
+from rest_framework import serializers
+from .models import (
+    WithdrawalFromCompoundingProfit,
+    WithdrawalFromMainBalance,
+    WithdrawalFromCashupBalance,
+    WithdrawalFromDailyProfit,
+    WithdrawalFromAffiliateProfit
+)
+
+from rest_framework import serializers
+from .models import (
+    WithdrawalFromCompoundingProfit,
+    WithdrawalFromMainBalance,
+    WithdrawalFromCashupBalance,
+    WithdrawalFromDailyProfit,
+    WithdrawalFromAffiliateProfit
+)
+
+
+class WithdrawalSerializer(serializers.ModelSerializer):
+    buyer_name = serializers.CharField(source='buyer.name')
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    status = serializers.CharField()
+    date = serializers.DateTimeField()
+    method = serializers.CharField(required=False)  # Not all withdrawals have a method
+    withdraw_number = serializers.CharField(required=False)  # Not all withdrawals have a withdraw_number
+    withdrawal_type = serializers.SerializerMethodField()
+
+    def get_withdrawal_type(self, instance):
+        # Dynamically add withdrawal type based on the model instance
+        if isinstance(instance, WithdrawalFromCompoundingProfit):
+            return 'Compounding Profit'
+        elif isinstance(instance, WithdrawalFromMainBalance):
+            return 'Main Balance'
+        elif isinstance(instance, WithdrawalFromCashupBalance):
+            return 'Cashup Balance'
+        elif isinstance(instance, WithdrawalFromDailyProfit):
+            return 'Daily Profit'
+        elif isinstance(instance, WithdrawalFromAffiliateProfit):
+            return 'Affiliate Profit'
+        return None  # In case something goes wrong
+
+    class Meta:
+        model = WithdrawalFromCompoundingProfit  # Set any model here, it's not directly used for serialization
+        fields = ['buyer_name', 'amount', 'status', 'date', 'method', 'withdraw_number', 'withdrawal_type']
+
+
+
+from rest_framework import serializers
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+
+from rest_framework import serializers
+from rest_framework import serializers
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+    confirm_new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        # Check if the new password is exactly 6 digits and contains only numbers
+        if len(value) != 6 or not value.isdigit():
+            raise serializers.ValidationError("Password must be exactly 6 digits and contain only numbers.")
+        return value
+
+    def validate(self, attrs):
+        # Check if the new password and confirm password match
+        if attrs.get('new_password') != attrs.get('confirm_new_password'):
+            raise serializers.ValidationError("New password and confirm password do not match.")
+        return attrs
+
+    def save(self):
+        user = self.context['request'].user
+        current_password = self.validated_data.get('current_password')  # Use .get() to avoid KeyError
+        new_password = self.validated_data.get('new_password')
+
+        # Check if the current password is provided
+        if not current_password:
+            raise serializers.ValidationError("Current password is required.")
+        
+        # Verify the current password is correct
+        if not user.check_password(current_password):
+            raise serializers.ValidationError("Current password is incorrect.")
+        
+        # Set the new password
+        user.set_password(new_password)
+        user.save()
+
+        # Return success message
+        return {"success": "Password updated successfully."}
+
+
 

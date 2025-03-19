@@ -42,16 +42,29 @@ class Buyer(AbstractUser):
     groups = models.ManyToManyField("auth.Group", related_name='buyers', blank=True)
     user_permissions = models.ManyToManyField("auth.Permission", related_name='buyers_permissions', blank=True)
     referral_code_used = models.ForeignKey('ReferralCode', on_delete=models.SET_NULL, null=True, blank=True)
+    
 
     def save(self, *args, **kwargs):
-
         if not self.username:
             self.username = self.phone_number  # Use phone number as username if not provided
         super().save(*args, **kwargs)
+        # Check if the referral_code is None, then create a new one
+        
+         # Save the Buyer instance
+
 
     def __str__(self):
         return self.name
-
+        
+class CompanyNumber(models.Model):
+    company_number= models.CharField( max_length=15,
+        validators=[RegexValidator(
+            regex=r'^(?:\+8801[3-9]{1}[0-9]{8}|01[3-9]{1}[0-9]{8})$', 
+            message="Enter a valid Bangladeshi phone number (with or without country code)."
+        )]
+    )
+    def __str__(self):
+        return self.company_number
 
 class WithdrawalFromCompoundingProfit(models.Model):
     buyer = models.ForeignKey('Buyer', on_delete=models.CASCADE)
@@ -138,15 +151,16 @@ class BuyerOTP(models.Model):
     buyer = models.ForeignKey(Buyer, on_delete=models.CASCADE, related_name='otps')
     otp = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
-
+    expires_at = models.DateTimeField(null=True, blank=True)
     is_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.buyer.phone_number} - {self.otp}"
 
+    
     def is_expired(self):
-        """Check if the OTP has expired (e.g., after 5 minutes)."""
-        return timezone.now() > self.created_at + timedelta(minutes=5)
+        """Check if the OTP has expired using timezone-aware datetime."""
+        return timezone.now() > self.expire
 
 
 # Purchase Model
@@ -199,6 +213,11 @@ class Purchase(models.Model):
 # Cashup Owing Deposit Model
 from django.db import models
 from decimal import Decimal
+from django.db import models
+from django.utils import timezone
+from datetime import timedelta
+from decimal import Decimal
+
 
 class CashupOwingDeposit(models.Model):
     requested_cashup_owing_main_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -241,11 +260,18 @@ class CashupDeposit(models.Model):
     daily_compounding_profit = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     monthly_compounding_profit = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     updated_by = models.ForeignKey(Buyer, on_delete=models.SET_NULL, null=True, blank=True)
+    last_updated = models.DateTimeField(null=True, blank=True)  # To track the last time the profit was updated
+    monthly_reset_date = models.DateTimeField(null=True, blank=True)  # Tracks
+    
 
     def __str__(self):
         return f"Deposit: {self.cashup_main_balance} by {self.buyer.name if self.buyer else 'Unknown Buyer'}"
 
     def save(self, *args, **kwargs):
+
+        now = timezone.now()
+
+
         if self.buyer and not self.updated_by:
             self.updated_by = self.buyer  # Set updated_by to buyer if not provided
 
@@ -288,6 +314,47 @@ class CashupDeposit(models.Model):
                     referral_code.is_used = True
                     referral_code.affiliate_profit_awarded = True
                     referral_code.save()  # Save the referral code update
+        # Add daily profit (0.2% of cashup_main_balance) but skip Friday and Sunday
+        
+        if self.last_updated is None or now - self.last_updated >= timedelta(hours=24):
+            if now.weekday() not in [4, 5]:  # 4 is Friday, 6 is Sunday
+                # Update daily profit with 0.2% of the cashup balance
+                self.daily_profit += self.cashup_main_balance * Decimal(0.002)  # 0.2% of cashup balance
+                self.last_updated = now
+                total_balance = self.cashup_main_balance + self.daily_profit
+                if now - self.created_at >= timedelta(days=30):
+                    self.compounding_profit += total_balance * Decimal(0.002) 
+
+
+        # Handle monthly reset and compound profit after one month
+        
+            # Calculate the total balance (cashup_main_balance + accumulated daily profit) for compounding profit
+            
+
+            # Calculate the compounding profit (0.2% of the total balance)
+             # 0.2% of the total balance
+
+            # Store the compounding profit in the monthly_compounding_profit field
+            
+
+            # Update the monthly reset date to the current date to track the next month
+            
+
+            # Reset the daily profit for the new month (but it will continue to accumulate in the next month)
+             # Reset daily profit after it's used in the calculation
+
+        # If more than 30 days have passed, update compounding profit daily
+        # elif now - self.monthly_reset_date >= timedelta(days=30):
+        #     # Calculate the total balance (cashup_main_balance + accumulated daily profit) for compounding profit
+        #     total_balance = self.cashup_main_balance + self.daily_profit
+
+        #     # Calculate the compounding profit (0.2% of the total balance)
+        #     self.compounding_profit += total_balance * Decimal(0.002)  # 0.2% of the total balance
+
+        # Save the changes
+        super().save(*args, **kwargs)
+
+    # Save the changes
 
         super().save(*args, **kwargs)
 
@@ -444,8 +511,11 @@ class Slider(models.Model):
 class SponsoredBy(models.Model):
     name=models.CharField(max_length=20)
     logo_url=models.CharField(max_length=500, blank=True, null=True, help_text="Image of the product")
+    brand_link=models.CharField(max_length=500,blank=True,null=True)
 
-
+class ProductAdSlider(models.Model):
+    title=models.CharField(max_length=20)
+    logo_url=models.CharField(max_length=500, blank=True, null=True, help_text="Image of the product")
 
 
 
@@ -527,6 +597,7 @@ class ReferralCode(models.Model):
     is_valid = models.BooleanField(default=True)
     is_used = models.BooleanField(default=False)  # Track if the referral code has been used
     affiliate_profit_awarded = models.BooleanField(default=False)  # Track if the affiliate profit has been awarded
+    
 
     def __str__(self):
         return self.code
@@ -608,7 +679,7 @@ def track_profit_changes(sender, instance, **kwargs):
 
     # List of profit-related fields to track
     profit_fields = [
-        'daily_profit', 'compounding_profit', 'monthly_profit', 'product_profit', 
+        'daily_profit', 'compounding_profit','affiliate_profit', 'monthly_profit', 'product_profit', 
         'daily_compounding_profit', 'monthly_compounding_profit'
     ]
 
@@ -644,7 +715,7 @@ def track_profit_changes(sender, instance, **kwargs):
 
     # List of profit-related fields to track
     profit_fields = [
-        'daily_profit', 'compounding_profit', 'monthly_profit', 'product_profit',
+        'daily_profit', 'compounding_profit', 'monthly_profit','affiliate_profit', 'product_profit',
         'daily_compounding_profit', 'monthly_compounding_profit'
     ]
 
